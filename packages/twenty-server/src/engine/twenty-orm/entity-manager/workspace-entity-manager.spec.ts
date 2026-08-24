@@ -244,6 +244,7 @@ describe('WorkspaceEntityManager', () => {
         'test-entity': 'test-entity-id',
       },
       featureFlagsMap: {
+        IS_API_RATE_LIMIT_V2_ENABLED: false,
         IS_APP_CLAIMING_ENABLED: false,
         IS_UNIQUE_INDEXES_ENABLED: false,
         IS_JSON_FILTER_ENABLED: false,
