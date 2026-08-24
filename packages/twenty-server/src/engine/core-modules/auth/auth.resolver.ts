@@ -1,5 +1,6 @@
 import { Logger, UseFilters, UseGuards, UsePipes } from '@nestjs/common';
-import { Args, Context, Mutation, Query } from '@nestjs/graphql';
+import { ModuleRef } from '@nestjs/core';
+import { Args, Context, Field, Mutation, ObjectType, Query } from '@nestjs/graphql';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import bytes from 'bytes';
@@ -42,6 +43,8 @@ import { ValidatePasswordResetTokenDTO } from 'src/engine/core-modules/auth/dto/
 import { ValidatePasswordResetTokenInput } from 'src/engine/core-modules/auth/dto/validate-password-reset-token.input';
 import { VerifyEmailAndGetLoginTokenDTO } from 'src/engine/core-modules/auth/dto/verify-email-and-get-login-token.dto';
 import { AuthGraphqlApiExceptionFilter } from 'src/engine/core-modules/auth/filters/auth-graphql-api-exception.filter';
+import { OperoxBridgeSecretGuard } from 'src/engine/core-modules/auth/guards/operox-bridge-secret.guard';
+import { OperoxBridgeService } from 'src/engine/core-modules/auth/services/operox-bridge.service';
 import { ResetPasswordService } from 'src/engine/core-modules/auth/services/reset-password.service';
 import { ThrottlerGraphqlApiExceptionFilter } from 'src/engine/core-modules/throttler/filters/throttler-graphql-api-exception.filter';
 import { ThrottlerService } from 'src/engine/core-modules/throttler/throttler.service';
@@ -74,6 +77,7 @@ import { I18nContext } from 'src/engine/core-modules/i18n/types/i18n-context.typ
 import { IMPERSONATION_DENIAL_BY_REASON } from 'src/engine/core-modules/impersonation/constants/impersonation-denial-by-reason.constant';
 import { IMPERSONATION_DENIAL_LOG_MESSAGE_BY_REASON } from 'src/engine/core-modules/impersonation/constants/impersonation-denial-log-message-by-reason.constant';
 import { ImpersonationAuthorizationService } from 'src/engine/core-modules/impersonation/services/impersonation-authorization.service';
+import { OnboardingService } from 'src/engine/core-modules/onboarding/onboarding.service';
 import { SSOService } from 'src/engine/core-modules/sso/services/sso.service';
 import { TwoFactorAuthenticationVerificationInput } from 'src/engine/core-modules/two-factor-authentication/dto/two-factor-authentication-verification.input';
 import { TwoFactorAuthenticationExceptionFilter } from 'src/engine/core-modules/two-factor-authentication/two-factor-authentication-exception.filter';
@@ -86,6 +90,7 @@ import { UserService } from 'src/engine/core-modules/user/services/user.service'
 import { UserEntity } from 'src/engine/core-modules/user/user.entity';
 import { AuthProviderEnum } from 'src/engine/core-modules/workspace/types/workspace.type';
 import { WorkspaceGraphqlApiExceptionFilter } from 'src/engine/core-modules/workspace/filters/workspace-graphql-api-exception.filter';
+import { WorkspaceService } from 'src/engine/core-modules/workspace/services/workspace.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthProvider } from 'src/engine/decorators/auth/auth-provider.decorator';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
@@ -117,6 +122,26 @@ import { AuthService } from './services/auth.service';
 const PASSWORD_RESET_EMAIL_RATE_LIMIT_MAX = 3;
 const PASSWORD_RESET_EMAIL_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
+// OperoX Phase 109 QA spike: response types for the two bridge mutations. Declared inline rather
+// than as separate dto/ files to stay inside the D-05 patch-file budget.
+@ObjectType()
+class OperoxProvisionWorkspaceDTO {
+  @Field(() => String)
+  workspaceId: string;
+
+  @Field(() => String)
+  subdomain: string;
+}
+
+@ObjectType()
+class OperoxGenerateLoginTokenDTO {
+  @Field(() => String)
+  loginToken: string;
+
+  @Field(() => Date)
+  expiresAt: Date;
+}
+
 @UsePipes(ResolverValidationPipe)
 @MetadataResolver()
 @UseFilters(
@@ -131,6 +156,11 @@ const PASSWORD_RESET_EMAIL_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 )
 export class AuthResolver {
   private readonly logger = new Logger(AuthResolver.name);
+  // OperoX Phase 109 QA spike: constructed manually (not through Nest's provider graph) because
+  // registering it in auth.module.ts would add a 6th core file against the D-05 patch-file
+  // budget. Every dependency it needs is already reachable from this resolver's own DI-resolved
+  // fields, either directly or (for WorkspaceService) via a global, non-strict ModuleRef lookup.
+  private readonly operoxBridgeService: OperoxBridgeService;
 
   constructor(
     private readonly throttlerService: ThrottlerService,
@@ -138,6 +168,10 @@ export class AuthResolver {
     private readonly userWorkspaceRepository: Repository<UserWorkspaceEntity>,
     @InjectRepository(AppTokenEntity)
     private readonly appTokenRepository: Repository<AppTokenEntity>,
+    @InjectRepository(WorkspaceEntity)
+    private readonly workspaceRepository: Repository<WorkspaceEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
     private readonly twoFactorAuthenticationService: TwoFactorAuthenticationService,
     private authService: AuthService,
     private renewTokenService: RenewTokenService,
@@ -162,7 +196,18 @@ export class AuthResolver {
     private readonly fileCorePictureService: FileCorePictureService,
     private readonly userSessionService: UserSessionService,
     private readonly userSessionCookieService: UserSessionCookieService,
-  ) {}
+    private readonly onboardingService: OnboardingService,
+    private readonly moduleRef: ModuleRef,
+  ) {
+    this.operoxBridgeService = new OperoxBridgeService(
+      this.moduleRef,
+      this.signInUpService,
+      this.loginTokenService,
+      this.onboardingService,
+      this.workspaceRepository,
+      this.userRepository,
+    );
+  }
 
   @UseGuards(CaptchaGuard, PublicEndpointGuard, NoPermissionGuard)
   @Query(() => CheckUserExistDTO)
@@ -737,6 +782,39 @@ export class AuthResolver {
     });
 
     return authTokens;
+  }
+
+  // --- OperoX Phase 109 QA spike: bridge mutations -------------------------------------------
+  // Both mutations below are reachable only through OperoxBridgeSecretGuard, which runs before
+  // this class's method body and denies (identically, for a wrong or a missing secret) before any
+  // database access. Neither mutation carries a user or workspace auth guard: the caller has no
+  // Twenty session by design (RESEARCH.md Pattern 1/2). See operox-bridge.service.ts for the
+  // actual provisioning/token-minting logic, which delegates to SignInUpService and
+  // LoginTokenService rather than reimplementing them.
+
+  @Mutation(() => OperoxProvisionWorkspaceDTO)
+  @UseGuards(OperoxBridgeSecretGuard, NoPermissionGuard)
+  async operoxProvisionWorkspace(
+    @Args('organizationId') organizationId: string,
+    @Args('displayName') displayName: string,
+    @Args('subdomain') subdomain: string,
+    @Args('ownerEmail') ownerEmail: string,
+  ): Promise<OperoxProvisionWorkspaceDTO> {
+    return this.operoxBridgeService.provisionWorkspace({
+      organizationId,
+      displayName,
+      subdomain,
+      ownerEmail,
+    });
+  }
+
+  @Mutation(() => OperoxGenerateLoginTokenDTO)
+  @UseGuards(OperoxBridgeSecretGuard, NoPermissionGuard)
+  async operoxGenerateLoginToken(
+    @Args('workspaceId') workspaceId: string,
+    @Args('email') email: string,
+  ): Promise<OperoxGenerateLoginTokenDTO> {
+    return this.operoxBridgeService.generateLoginToken({ workspaceId, email });
   }
 
   @Mutation(() => AuthTokens)
