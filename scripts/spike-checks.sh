@@ -118,13 +118,21 @@ fi
 # ---------------------------------------------------------------------------
 # Probe 3 — enterprise contamination (D-02)
 # ---------------------------------------------------------------------------
+# Scoped to packages/ (PATCH_FILES from Probe 1), same scope as Probes 1/2 and for the same
+# reason: scripts/spike-checks.sh, docker-compose.spike.yml, .env.spike.example etc. are spike
+# infrastructure, not core patches to Twenty, and this script's own source necessarily CONTAINS
+# the literal strings '@license Enterprise' and 'ENTERPRISE_KEY' as part of its own detection
+# logic below. Scanning the unrestricted file list made this probe self-referential — as soon as
+# this script itself was a new file in the diff (from 109-01 onward), it flagged itself as a false
+# positive on every run. D-02's actual concern is core code that ships with the fork, which is
+# exactly the packages/ scope.
 echo
 echo "--- Probe 3: enterprise-header contamination ---"
-CMD3="git diff ${BASE_REF}..HEAD --name-only | (only existing files) | xargs grep -l '@license Enterprise'"
+CMD3="git diff ${BASE_REF}..HEAD --name-only -- packages/ | (only existing files) | xargs grep -l '@license Enterprise'"
 ran "${CMD3}"
 
 ENTERPRISE_HITS=""
-if [ -n "${UNRESTRICTED_FILES}" ]; then
+if [ -n "${PATCH_FILES}" ]; then
   # Guard the empty-file-list case explicitly rather than piping into xargs grep and trusting its
   # exit status — an empty input to `xargs grep` can produce a spurious non-zero/empty result that
   # is easy to misread as "no matches" for the wrong reason.
@@ -132,7 +140,7 @@ if [ -n "${UNRESTRICTED_FILES}" ]; then
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ -f "${REPO_ROOT}/${f}" ] && EXISTING_FILES="${EXISTING_FILES}${f}"$'\n'
-  done <<< "${UNRESTRICTED_FILES}"
+  done <<< "${PATCH_FILES}"
 
   if [ -n "${EXISTING_FILES}" ]; then
     ENTERPRISE_HITS="$(printf '%s' "${EXISTING_FILES}" | xargs -r grep -l '@license Enterprise' 2>/dev/null || true)"
@@ -140,20 +148,20 @@ if [ -n "${UNRESTRICTED_FILES}" ]; then
 fi
 
 if [ -z "${ENTERPRISE_HITS}" ]; then
-  pass "no changed file contains the '@license Enterprise' marker"
+  pass "no changed file under packages/ contains the '@license Enterprise' marker"
 else
   fail "enterprise-licensed file(s) touched by the diff:"
   printf '%s\n' "${ENTERPRISE_HITS}" | sed 's/^/  - /'
 fi
 
-CMD3B="git diff ${BASE_REF}..HEAD | grep -c ENTERPRISE_KEY"
+CMD3B="git diff ${BASE_REF}..HEAD -- packages/ | grep -c ENTERPRISE_KEY"
 ran "${CMD3B}"
-ENTERPRISE_KEY_HITS="$(git diff "${BASE_REF}"..HEAD 2>/dev/null | grep -c "ENTERPRISE_KEY" || true)"
+ENTERPRISE_KEY_HITS="$(git diff "${BASE_REF}"..HEAD -- packages/ 2>/dev/null | grep -c "ENTERPRISE_KEY" || true)"
 ENTERPRISE_KEY_HITS=${ENTERPRISE_KEY_HITS:-0}
 if [ "${ENTERPRISE_KEY_HITS}" -eq 0 ]; then
-  pass "ENTERPRISE_KEY appears in no tracked file added or modified by the diff"
+  pass "ENTERPRISE_KEY appears in no tracked file added or modified under packages/"
 else
-  fail "ENTERPRISE_KEY appears ${ENTERPRISE_KEY_HITS} time(s) in the diff (D-02 violated)"
+  fail "ENTERPRISE_KEY appears ${ENTERPRISE_KEY_HITS} time(s) in the packages/ diff (D-02 violated)"
 fi
 
 # ---------------------------------------------------------------------------
