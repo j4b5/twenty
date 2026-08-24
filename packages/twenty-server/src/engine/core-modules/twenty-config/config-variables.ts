@@ -548,6 +548,26 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description:
+      'OperoX Phase 109 QA spike only: when enabled, bypasses the workspace-count limit for new workspace creation. Must never be set outside the local spike stack.',
+    isEnvOnly: true,
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  OPEROX_SPIKE_UNLIMITED_WORKSPACES = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    isSensitive: true,
+    description:
+      'OperoX Phase 109 QA spike only: shared secret required by the operoxProvisionWorkspace and operoxGenerateLoginToken bridge mutations.',
+    isEnvOnly: true,
+    type: ConfigVariableType.STRING,
+  })
+  OPEROX_BRIDGE_SECRET: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
       'When enabled, server admins can toggle any feature flag for any workspace from the admin panel. Always enabled in development mode and when billing is enabled.',
     type: ConfigVariableType.BOOLEAN,
   })

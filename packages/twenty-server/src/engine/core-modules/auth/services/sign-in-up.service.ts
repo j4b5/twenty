@@ -501,7 +501,12 @@ export class SignInUpService {
       return;
     }
 
-    await this.assertWorkspaceCountWithinLimit(workspaceCount);
+    // QA-only spike guard (Phase 109): the assertion below still exists and still runs by
+    // default. It is skipped only when a local, un-committed environment variable is explicitly
+    // set to true on the spike stack — see config-variables.ts for the flag's declaration.
+    if (!this.twentyConfigService.get('OPEROX_SPIKE_UNLIMITED_WORKSPACES')) {
+      await this.assertWorkspaceCountWithinLimit(workspaceCount);
+    }
 
     if (
       !this.twentyConfigService.get(
