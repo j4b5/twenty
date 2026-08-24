@@ -7,6 +7,9 @@ const isString = (value: unknown): value is string => {
 
 const VARIABLE_PATTERN = RegExp('\\{\\{([^{}]+)\\}\\}', 'g');
 
+export const isVariableReference = (input: unknown): boolean =>
+  isString(input) && input.match(VARIABLE_PATTERN) !== null;
+
 export const resolveInput = (
   unresolvedInput: unknown,
   context: Record<string, unknown>,
