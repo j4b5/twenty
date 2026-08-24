@@ -176,11 +176,15 @@ export class OperoxBridgeService {
     // AuthResolver.getLoginTokenFromCredentials makes for a real password login, with the same
     // AuthProviderEnum.Password provider tag. getAuthTokensFromLoginToken accepts this token
     // through its normal (non-impersonation) branch: no new token type, signing key or expiry
-    // policy is introduced.
-    return this.loginTokenService.generateLoginToken(
+    // policy is introduced. LoginTokenService returns { token, expiresAt } (the AuthToken shape);
+    // this bridge's GraphQL contract names the field loginToken instead, so it is remapped here
+    // rather than by inventing a second field name inside LoginTokenService.
+    const { token, expiresAt } = await this.loginTokenService.generateLoginToken(
       email,
       workspace.id,
       AuthProviderEnum.Password,
     );
+
+    return { loginToken: token, expiresAt };
   }
 }
