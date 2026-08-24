@@ -48,6 +48,11 @@ services:
       LOGIC_FUNCTION_TYPE: ${LOGIC_FUNCTION_TYPE}
       AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE}
       AUTH_COOKIE_ALLOWED_ORIGINS: ${AUTH_COOKIE_ALLOWED_ORIGINS}
+
+      # Phase 109-02 spike bridge patches (config-variables.ts). Forwarded explicitly, same as
+      # every other var above -- compose does not auto-pass .env.spike into the container.
+      OPEROX_SPIKE_UNLIMITED_WORKSPACES: ${OPEROX_SPIKE_UNLIMITED_WORKSPACES:-false}
+      OPEROX_BRIDGE_SECRET: ${OPEROX_BRIDGE_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
@@ -92,6 +97,11 @@ services:
       LOGIC_FUNCTION_TYPE: ${LOGIC_FUNCTION_TYPE}
       AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE}
       AUTH_COOKIE_ALLOWED_ORIGINS: ${AUTH_COOKIE_ALLOWED_ORIGINS}
+
+      # Phase 109-02 spike bridge patches (config-variables.ts). Forwarded explicitly, same as
+      # every other var above -- compose does not auto-pass .env.spike into the container.
+      OPEROX_SPIKE_UNLIMITED_WORKSPACES: ${OPEROX_SPIKE_UNLIMITED_WORKSPACES:-false}
+      OPEROX_BRIDGE_SECRET: ${OPEROX_BRIDGE_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
