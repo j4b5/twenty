@@ -501,12 +501,18 @@ export class SignInUpService {
       return;
     }
 
-    // QA-only spike guard (Phase 109): the assertion below still exists and still runs by
-    // default. It is skipped only when a local, un-committed environment variable is explicitly
-    // set to true on the spike stack — see config-variables.ts for the flag's declaration.
-    if (!this.twentyConfigService.get('OPEROX_SPIKE_UNLIMITED_WORKSPACES')) {
-      await this.assertWorkspaceCountWithinLimit(workspaceCount);
+    // QA-only spike guard (Phase 109): both checks below still exist and still run by default.
+    // They are skipped only when a local, un-committed environment variable is explicitly set to
+    // true on the spike stack — see config-variables.ts for the flag's declaration. Both the
+    // count cap and the admin-only restriction exist to stop arbitrary self-service workspace
+    // creation; operoxProvisionWorkspace (operox-bridge.service.ts) is itself reachable only
+    // through a secret-guarded mutation, so a caller that reaches this point has already cleared
+    // a stronger check than either of these two.
+    if (this.twentyConfigService.get('OPEROX_SPIKE_UNLIMITED_WORKSPACES')) {
+      return;
     }
+
+    await this.assertWorkspaceCountWithinLimit(workspaceCount);
 
     if (
       !this.twentyConfigService.get(
