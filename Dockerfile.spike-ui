@@ -1,0 +1,8 @@
+# Phase 109 spike: the patched server image was built with the server-only target
+# (patches touch no packages/twenty-front files), so it lacks the static front-end
+# bundle the server serves at /. Layer the UNMODIFIED v2.34.0 front bundle onto it —
+# identical to what the upstream `twenty` stage does with its own front build.
+ARG SERVER_TAG=operox-spike-server
+FROM twentycrm/twenty:${SERVER_TAG}
+COPY --chown=1000 --from=twentycrm/twenty:v2.34.0 /app/packages/twenty-server/dist/front /app/packages/twenty-server/dist/front
+LABEL org.opencontainers.image.description="OperoX spike: patched twenty-server + upstream v2.34.0 front bundle"
