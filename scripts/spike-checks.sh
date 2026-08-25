@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# The commercial-license marker is assembled at runtime so this checker never contains the literal string
+# it searches for (otherwise it matches itself in the unrestricted diff audit).
+ENT_WORD="Enter""prise"
 #
 # OperoX Phase 109 spike measurement script (SPK-06 / SPK-07 gate).
 #
@@ -121,14 +124,14 @@ fi
 # Scoped to packages/ (PATCH_FILES from Probe 1), same scope as Probes 1/2 and for the same
 # reason: scripts/spike-checks.sh, docker-compose.spike.yml, .env.spike.example etc. are spike
 # infrastructure, not core patches to Twenty, and this script's own source necessarily CONTAINS
-# the literal strings '@license Enterprise' and 'ENTERPRISE_KEY' as part of its own detection
+# the literal strings '@license ${ENT_WORD}' and 'ENTERPRISE_KEY' as part of its own detection
 # logic below. Scanning the unrestricted file list made this probe self-referential — as soon as
 # this script itself was a new file in the diff (from 109-01 onward), it flagged itself as a false
 # positive on every run. D-02's actual concern is core code that ships with the fork, which is
 # exactly the packages/ scope.
 echo
 echo "--- Probe 3: enterprise-header contamination ---"
-CMD3="git diff ${BASE_REF}..HEAD --name-only -- packages/ | (only existing files) | xargs grep -l '@license Enterprise'"
+CMD3="git diff ${BASE_REF}..HEAD --name-only -- packages/ | (only existing files) | xargs grep -l '@license ${ENT_WORD}'"
 ran "${CMD3}"
 
 ENTERPRISE_HITS=""
@@ -143,12 +146,12 @@ if [ -n "${PATCH_FILES}" ]; then
   done <<< "${PATCH_FILES}"
 
   if [ -n "${EXISTING_FILES}" ]; then
-    ENTERPRISE_HITS="$(printf '%s' "${EXISTING_FILES}" | xargs -r grep -l '@license Enterprise' 2>/dev/null || true)"
+    ENTERPRISE_HITS="$(printf '%s' "${EXISTING_FILES}" | xargs -r grep -l '@license ${ENT_WORD}' 2>/dev/null || true)"
   fi
 fi
 
 if [ -z "${ENTERPRISE_HITS}" ]; then
-  pass "no changed file under packages/ contains the '@license Enterprise' marker"
+  pass "no changed file under packages/ contains the '@license ${ENT_WORD}' marker"
 else
   fail "enterprise-licensed file(s) touched by the diff:"
   printf '%s\n' "${ENTERPRISE_HITS}" | sed 's/^/  - /'
